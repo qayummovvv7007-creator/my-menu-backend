@@ -1,0 +1,10 @@
+POST http://localhost:5000/api/products
+Content-Type: application/json
+
+{
+    "nomi": "Go'shtli Lavash",
+    "narxi": 32000,
+    "tarkibi": "Mol go'shti, pomidor, bodring, sous",
+    "toifa": "Ovqatlar",
+    "rasm": "https://url-manzil.uz/lavash.jpg"
+}
