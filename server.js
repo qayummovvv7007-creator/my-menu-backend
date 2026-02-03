@@ -8,15 +8,19 @@ dotenv.config();
 
 const app = express();
 
-// 1. Middleware (Hammasi joyida)
-app.use(cors());
+// 1. Middleware - CORS onlayn ishlashi uchun sozlangan
+app.use(cors({
+    origin: '*', // Hamma frontend linklardan ruxsat beradi
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    allowedHeaders: ['Content-Type']
+}));
 app.use(express.json());
 
 // 2. O'zgaruvchilar
 const MONGO_URI = process.env.MONGO_URI;
 const PORT = process.env.PORT || 5000;
 
-// 3. MongoDB ulanishi (Atlas uchun optimallashtirilgan)
+// 3. MongoDB ulanishi
 mongoose.connect(MONGO_URI)
     .then(() => console.log("✅ MongoDB Atlasga muvaffaqiyatli ulandi"))
     .catch((err) => {
@@ -97,7 +101,7 @@ app.delete("/api/orders/:id", async (req, res) => {
     }
 });
 
-// 6. SERVERNI YOQISH (Bu qism hamma narsadan pastda tursin)
-app.listen(PORT, () => {
+// 6. SERVERNI YOQISH
+app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Server ${PORT}-portda uyg'oq!`);
 });
