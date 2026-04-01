@@ -5,23 +5,19 @@ import mongoose from 'mongoose';
 import productRoutes from './routes/productRoutes.js';
 
 dotenv.config();
-
 const app = express();
 
-// 1. Middleware
 app.use(cors());
 app.use(express.json());
 
-// 2. O'zgaruvchilar
 const MONGO_URI = process.env.MONGO_URI;
 const PORT = process.env.PORT || 5000;
 
-// 3. MongoDB ulanishi
 mongoose.connect(MONGO_URI)
     .then(() => console.log("✅ MongoDB Atlasga muvaffaqiyatli ulandi"))
     .catch((err) => console.error("❌ MongoDB xatosi:", err.message));
 
-// 4. Modellar (Timestamps qo'shildi - vaqtni aniq hisoblash uchun)
+// --- MODELLAR ---
 const Category = mongoose.models.Category || mongoose.model('Category', new mongoose.Schema({
     nomi: { type: String, required: true }
 }));
@@ -30,64 +26,72 @@ const OrderSchema = new mongoose.Schema({
     items: Array,
     totalPrice: Number,
     phone: String,
-    date: String,
     status: { type: String, default: "Yangi" }
-}, { timestamps: true }); // Avtomatik createdAt va updatedAt qo'shadi
+}, { timestamps: true });
 
 const Order = mongoose.models.Order || mongoose.model('Order', OrderSchema);
 
-// 5. Routes
+// --- ROUTES ---
 app.use('/api/products', productRoutes);
 
-// --- STATISTIKA ALGORITMI (Yangi qo'shilgan qism) ---
+// --- STATISTIKA ALGORITMI (Vaqt zonasi va Kunbay tahlil bilan) ---
 app.get("/api/admin/stats", async (req, res) => {
     try {
+        // 1. O'zbekiston vaqti bilan aynan hozirgi lahzani va bugungi kun boshini hisoblaymiz
         const now = new Date();
-        // O'zbekiston vaqti bilan bugun 00:00 ni topamiz
-        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const tashkentTime = new Date(now.toLocaleString("en-US", {timeZone: "Asia/Tashkent"}));
         
-        // Oxirgi 7 kun va 30 kun uchun vaqt chegaralari
-        const lastWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-        const lastMonth = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        const startOfToday = new Date(tashkentTime);
+        startOfToday.setHours(0, 0, 0, 0); // Bugun 00:00:00
+
+        const lastWeek = new Date(startOfToday);
+        lastWeek.setDate(lastWeek.getDate() - 7);
+
+        const lastMonth = new Date(startOfToday);
+        lastMonth.setDate(lastMonth.getDate() - 30);
 
         const stats = await Order.aggregate([
             {
                 $facet: {
-                    // BUGUNGI SAVDO VA TOP MAHSULOTLAR
+                    // BUGUNGI SAVDO
                     "bugun": [
                         { $match: { createdAt: { $gte: startOfToday } } },
                         { $group: { _id: null, summa: { $sum: "$totalPrice" }, count: { $sum: 1 } } }
                     ],
+                    // BUGUNGI TOP MAHSULOTLAR
                     "topProducts": [
                         { $match: { createdAt: { $gte: startOfToday } } },
                         { $unwind: "$items" },
-                        { $group: { _id: "$items.nomi", qty: { $sum: "$items.soni" } } },
+                        { $group: { _id: "$items.nomi", qty: { $sum: { $toInt: "$items.soni" } } } },
                         { $sort: { qty: -1 } },
                         { $limit: 10 }
                     ],
-                    // HAFTALIK VA OYLIK UMUMIY SUMMALAR
+                    // HAFTALIK SUMMA
                     "haftalik": [
                         { $match: { createdAt: { $gte: lastWeek } } },
                         { $group: { _id: null, summa: { $sum: "$totalPrice" }, count: { $sum: 1 } } }
                     ],
+                    // OYLIK SUMMA
                     "oylik": [
                         { $match: { createdAt: { $gte: lastMonth } } },
                         { $group: { _id: null, summa: { $sum: "$totalPrice" }, count: { $sum: 1 } } }
                     ],
-                    // GRAFIK UCHUN (7 kunlik trend)
+                    // GRAFIK VA KUNBAY MAHSULOT TAHLILI
                     "trend": [
                         { $match: { createdAt: { $gte: lastWeek } } },
-                        { $group: {
-                            _id: { $dateToString: { format: "%d/%m", date: "$createdAt", timezone: "+05:00" } },
-                            summa: { $sum: "$totalPrice" }
-                        }},
+                        { 
+                            $group: {
+                                _id: { $dateToString: { format: "%d/%m", date: "$createdAt", timezone: "+05:00" } },
+                                summa: { $sum: "$totalPrice" },
+                                orders: { $sum: 1 }
+                            }
+                        },
                         { $sort: { "_id": 1 } }
                     ]
                 }
             }
         ]);
 
-        // Frontend oson tushunishi uchun formatlaymiz
         const result = {
             kunlik: {
                 summa: stats[0].bugun[0]?.summa || 0,
@@ -111,7 +115,7 @@ app.get("/api/admin/stats", async (req, res) => {
     }
 });
 
-// --- KATEGORIYALAR VA BUYURTMALAR (Siz yozgan kodlar) ---
+// --- KATEGORIYALAR ---
 app.get("/api/categories", async (req, res) => {
     try {
         const cats = await Category.find();
@@ -134,9 +138,10 @@ app.delete("/api/categories/:id", async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// --- BUYURTMALAR ---
 app.get("/api/orders", async (req, res) => {
     try {
-        const orders = await Order.find().sort({ createdAt: -1 }); // Vaqt bo'yicha saralash
+        const orders = await Order.find().sort({ createdAt: -1 });
         res.json(orders);
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -156,7 +161,6 @@ app.delete("/api/orders/:id", async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// 6. SERVERNI YOQISH
 app.listen(PORT, () => {
     console.log(`🚀 Server ${PORT}-portda uyg'oq!`);
 });
