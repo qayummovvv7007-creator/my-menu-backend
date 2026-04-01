@@ -34,15 +34,14 @@ const Order = mongoose.models.Order || mongoose.model('Order', OrderSchema);
 // --- ROUTES ---
 app.use('/api/products', productRoutes);
 
-// --- STATISTIKA ALGORITMI (Vaqt zonasi va Kunbay tahlil bilan) ---
+// --- STATISTIKA ALGORITMI ---
 app.get("/api/admin/stats", async (req, res) => {
     try {
-        // 1. O'zbekiston vaqti bilan aynan hozirgi lahzani va bugungi kun boshini hisoblaymiz
         const now = new Date();
-        const tashkentTime = new Date(now.toLocaleString("en-US", {timeZone: "Asia/Tashkent"}));
-        
+        const tashkentTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Tashkent" }));
+
         const startOfToday = new Date(tashkentTime);
-        startOfToday.setHours(0, 0, 0, 0); // Bugun 00:00:00
+        startOfToday.setHours(0, 0, 0, 0);
 
         const lastWeek = new Date(startOfToday);
         lastWeek.setDate(lastWeek.getDate() - 7);
@@ -58,39 +57,88 @@ app.get("/api/admin/stats", async (req, res) => {
                         { $match: { createdAt: { $gte: startOfToday } } },
                         { $group: { _id: null, summa: { $sum: "$totalPrice" }, count: { $sum: 1 } } }
                     ],
+
                     // BUGUNGI TOP MAHSULOTLAR
                     "topProducts": [
                         { $match: { createdAt: { $gte: startOfToday } } },
                         { $unwind: "$items" },
-                        { $group: { _id: "$items.nomi", qty: { $sum: { $toInt: "$items.soni" } } } },
+                        {
+                            $group: {
+                                _id: "$items.nomi",
+                                qty: { $sum: { $toInt: "$items.soni" } }
+                            }
+                        },
                         { $sort: { qty: -1 } },
                         { $limit: 10 }
                     ],
+
                     // HAFTALIK SUMMA
                     "haftalik": [
                         { $match: { createdAt: { $gte: lastWeek } } },
                         { $group: { _id: null, summa: { $sum: "$totalPrice" }, count: { $sum: 1 } } }
                     ],
+
                     // OYLIK SUMMA
                     "oylik": [
                         { $match: { createdAt: { $gte: lastMonth } } },
                         { $group: { _id: null, summa: { $sum: "$totalPrice" }, count: { $sum: 1 } } }
                     ],
-                    // GRAFIK VA KUNBAY MAHSULOT TAHLILI
+
+                    // HAFTALIK GRAFIK (kunbay summa)
                     "trend": [
                         { $match: { createdAt: { $gte: lastWeek } } },
-                        { 
+                        {
                             $group: {
-                                _id: { $dateToString: { format: "%d/%m", date: "$createdAt", timezone: "+05:00" } },
+                                _id: {
+                                    $dateToString: {
+                                        format: "%d/%m",
+                                        date: "$createdAt",
+                                        timezone: "+05:00"
+                                    }
+                                },
                                 summa: { $sum: "$totalPrice" },
                                 orders: { $sum: 1 }
                             }
                         },
                         { $sort: { "_id": 1 } }
+                    ],
+
+                    // ✅ KUNBAY MAHSULOT TAHLILI — har kuni qaysi mahsulot necha marta buyurtma qilingan
+                    "trendProducts": [
+                        { $match: { createdAt: { $gte: lastMonth } } },
+                        { $unwind: "$items" },
+                        {
+                            $group: {
+                                _id: {
+                                    date: {
+                                        $dateToString: {
+                                            format: "%Y-%m-%d",
+                                            date: "$createdAt",
+                                            timezone: "+05:00"
+                                        }
+                                    },
+                                    product: "$items.nomi"
+                                },
+                                qty: { $sum: { $toInt: "$items.soni" } }
+                            }
+                        },
+                        { $sort: { "_id.date": 1, qty: -1 } }
                     ]
                 }
             }
         ]);
+
+        // trendProducts ni kunbay ob'ektga o'zgartirish: { "2025-05-02": [{name, qty}, ...] }
+        const trendProductsRaw = stats[0].trendProducts || [];
+        const trendProductsByDay = {};
+        trendProductsRaw.forEach(item => {
+            const date = item._id.date;
+            if (!trendProductsByDay[date]) trendProductsByDay[date] = [];
+            trendProductsByDay[date].push({
+                name: item._id.product,
+                qty: item.qty
+            });
+        });
 
         const result = {
             kunlik: {
@@ -106,7 +154,9 @@ app.get("/api/admin/stats", async (req, res) => {
             oylik: {
                 summa: stats[0].oylik[0]?.summa || 0,
                 count: stats[0].oylik[0]?.count || 0
-            }
+            },
+            // ✅ Frontend uchun kunbay mahsulotlar
+            trendProductsByDay
         };
 
         res.json(result);
