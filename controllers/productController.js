@@ -31,3 +31,17 @@ export const deleteProduct = async (req, res) => {
         res.status(500).json({ message: error.message });
     }
 };  
+
+
+export const updateProduct = async (req, res) => {
+  try {
+    const product = await Product.findByIdAndUpdate(
+      req.params.id,
+      { $set: req.body },
+      { new: true }
+    );
+    res.json(product);
+  } catch (e) {
+    res.status(500).json({ message: e.message });
+  }
+};
