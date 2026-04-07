@@ -11,7 +11,13 @@ import statsRoutes    from './routes/statsRoutes.js';
 dotenv.config();
 const app = express();
 
-app.use(cors());
+// ✅ CORS — PUT, PATCH, DELETE metodlariga ruxsat
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}));
+
 app.use(express.json());
 
 const MONGO_URI = process.env.MONGO_URI;
@@ -25,7 +31,7 @@ mongoose.connect(MONGO_URI)
 app.use('/api/products',    productRoutes);
 app.use('/api/orders',      orderRoutes);
 app.use('/api/categories',  categoryRoutes);
-app.use('/api/admin',       statsRoutes);   // → GET /api/admin/stats
+app.use('/api/admin',       statsRoutes);
 
 app.listen(PORT, () => {
     console.log(`🚀 Server ${PORT}-portda uyg'oq!`);
